@@ -9,47 +9,58 @@ import numpy as np
 import slab
 from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
-from freefield import DIR, Processors, camera
+from freefield import DIR, Processors, cameras
 
 logging.basicConfig(level=logging.INFO)
 slab.Signal.set_default_samplerate(48828)  # default samplerate for generating sounds, filters etc.
 # Initialize global variables:
-CAMERAS = camera.Cameras()
+CAMERAS = cameras.Cameras()
 PROCESSORS = Processors()
 SPEAKERS = []  # list of all the loudspeakers in the active setup
 SETUP = ""  # the currently active setup - "dome" or "arc"
 
 
-def initialize_setup(setup, default_mode=None, proc_list=None, zbus=True, connection="GB", camera_type=None):
+def initialize(setup, default=None, device=None, zbus=True, connection="GB", camera=None):
     """
-    Initialize the processors and load table and calibration for setup.
+    Initialize the device and load table (and calibration) for the selected setup. Once initialized,
+    the setup runs until `halt()` is called. Initialzing device which are already running will flush them.
 
-    We are using two different 48-channel setups. A 3-dimensional 'dome' and
-    a horizontal 'arc'. For each setup there is a table describing the position
-    and channel of each loudspeaker as well as calibration files. This function
-    loads those files and stores them in global variables. This is necessary
-    for most of the other functions to work.
+    Arguments:
+        setup (str): which setup to load, can be 'dome' or 'arc'
+        default (str | None): initialize the setup using one of the default settings which are:
+            'play_rec': play sounds using two RX8s and record them with a RP2
+            'play_birec': same as 'play_rec' but record from two microphone channels
+            'loctest_freefield': sound localization test under freefield conditions
+            'loctest_headphones': localization test with headphones
+            'cam_calibration': calibrate cameras for headpose estimation
+        device (list | None): A list which contains the name given to the device, it's model and the path to the
+            .rcx file to be loaded. To initialize multiple devices at once, pass a list of lists where each sub-list
+             contains [name, model, file] for one device.
+        zbus (bool): whether or not to initialize the zbus interface for sending triggers.
+        connection (str): type of connection to device, can be "GB" (optical) or "USB"
+        camera (str | None): kind of camera that is initialized, can be "webcam", "flir".
 
-    Args:
-        setup: determines which files to load, can be 'dome' or 'arc'
-        default_mode: initialize the setup using one of the defaults, see Processors.initialize_default
-        proc_list: if not using a default, specify the processors in a list, see processors.initialize_processors
-        zbus: whether or not to initialize the zbus interface
-        connection: type of connection to processors, can be "GB" (optical) or "USB"
-        camera_type: kind of camera that is initialized. Can be "webcam", "flir" or None
+    Examples:
+        >>> from freefield import initialize, DIR
+        >>> # initialize the dome setup with one RX8 processor along with the FLIR cameras:
+        >>> initialize(setup="dome", device=['RX8', 'RX8', 'play_buf.rcx'], camera="flir")
+        >>> # initialize the arc with two RX8's which are names "RX81" and "RX82":
+        >>> initialize(setup="arc", device=[['RX81', 'RX8', 'play_buf.rcx'], ['RX82', 'RX8', 'play_buf.rcx']])
+        >>> # use the default settings for a freefield localization test:
+        >>> initialize(setup="dome", default="loctest_freefield")
     """
-    global PROCESSORS, CAMERAS, SETUP
-    # initialize processors
+    global PROCESSORS, CAMERAS, SETUP, SPEAKERS
+    # initialize device
     SETUP = setup
-    if bool(proc_list) == bool(default_mode):
-        raise ValueError("You have to specify a proc_list OR a default_mode")
-    if proc_list is not None:
-        PROCESSORS.initialize(proc_list, zbus, connection)
-    elif default_mode is not None:
-        PROCESSORS.initialize_default(default_mode)
-    if camera_type is not None:
-        CAMERAS = camera.initialize_cameras(camera_type)
-    read_speaker_table()  # load the table containing the information about the loudspeakers
+    if bool(device) == bool(default):
+        raise ValueError("You have to specify a device OR a default_mode")
+    if device is not None:
+        PROCESSORS.initialize(device, zbus, connection)
+    elif default is not None:
+        PROCESSORS.initialize_default(default)
+    if camera is not None:
+        CAMERAS = cameras.initialize(camera)
+    SPEAKERS = read_speaker_table()  # load the table containing the information about the loudspeakers
     try:
         load_equalization()  # load the default equalization
     except FileNotFoundError:
@@ -59,6 +70,9 @@ def initialize_setup(setup, default_mode=None, proc_list=None, zbus=True, connec
 
 @dataclass
 class Speaker:
+    """
+    Class for handling the loudspeakers which are usually loaded using `read_speaker_table().`.
+    """
     index: int  # the index number of the speaker
     analog_channel: int  # the number of the analog channel to which the speaker is attached
     analog_proc: str  # the processor to whose analog I/O the speaker is attached
@@ -69,60 +83,125 @@ class Speaker:
     level: float = None  # the constant for level equalization
     filter: slab.Filter = None  # filter for equalizing the filters transfer function
 
+    def __repr__(self):
+        if (self.level is None) and (self.filter is None):
+            calibrated = "NOT calibrated"
+        else:
+            calibrated = "calibrated"
+        return f"<speaker {self.index} at azimuth {self.azimuth} and elevation {self.elevation}, {calibrated}>"
+
 
 def read_speaker_table():
-    global SPEAKERS
-    SPEAKERS = []
+    """
+    Read table containing loudspeaker information from a file and initialize a `Speaker` instance for each entry.
+
+    Returns:
+        (list): a list of instances of the `Speaker` class.
+    """
+    speakers = []
     table_file = DIR / 'data' / 'tables' / Path(f'speakertable_{SETUP}.txt')
     table = np.loadtxt(table_file, skiprows=1, delimiter=",", dtype=str)
     for row in table:
-        SPEAKERS.append(Speaker(index=int(row[0]), analog_channel=int(row[1]), analog_proc=row[2],
+        speakers.append(Speaker(index=int(row[0]), analog_channel=int(row[1]), analog_proc=row[2],
                                 azimuth=float(row[3]), digital_channel=int(row[5]) if row[5] else None,
                                 elevation=float(row[4]), digital_proc=row[6] if row[6] else None))
+    return speakers
 
 
-def load_equalization(equalization_file=None):
-    if equalization_file is None:
-        equalization_file = DIR / 'data' / f'calibration_{SETUP}.pkl'
+def load_equalization(file=None):
+    """
+    Load a loudspeaker equalization from a pickle file and set the `level` and `filter` attribute of each speaker
+        in the global speakers list.
+
+    Arguments:
+        file (str | None): Path to the pickle file storing the equalization. If None, the function will
+            try to load the equalization from the default file.
+    """
+    if file is None:
+        file = DIR / 'data' / f'calibration_{SETUP}.pkl'
     else:
-        equalization_file = Path(equalization_file)
-    if equalization_file.exists():
-        with open(equalization_file, "rb") as f:
+        file = Path(file)
+    if file.exists():
+        with open(file, "rb") as f:
             equalization = pickle.load(f)
         for index in equalization.keys():
             speaker = pick_speakers(picks=int(index))[0]
             speaker.level = equalization[index]["level"]
             speaker.filter = equalization[index]["filter"]
     else:
-        raise FileNotFoundError(f"Could not load equalization file {equalization_file}!")
+        raise FileNotFoundError(f"Could not load equalization file {file}!")
 
 
 # Wrappers for Processor operations read, write, trigger and halt:
-def write(tag, value, procs):
-    PROCESSORS.write(tag=tag, value=value, procs=procs)
+def write(tag, value, processors):
+    """
+    Write data to processor(s) by setting a `tag` on one or multiple device to a given value.
+    The same tag can be set to the same value on multiple device by passing a list of names.
+
+    Arguments:
+        tag (str): Name of the tag in the .rcx file where the `value` is written to.
+        value (int | float | array) : Value that is written to the tag. If an array, it must be one dimensional.
+            The data type of the value must match the tag in the .rcx file, otherwise this function will fail without
+            raising an error.
+        processors (str | list) : string (or list of strings) with the name(s) of the processor(s) to write to.
+
+    Examples:
+        import freefield
+        freefield.initialize(setup="dome", default="play_rec")
+        write('data', 1000, ['RX81', 'RX82']) # set the value of tag 'playbuflen' on RX81 & RX82 to 1000
+        import numpy
+        data = numpy.random.randn(1000)
+        write('data', data, "RX81") # write data array to the tag 'data' on the RX81
+    """
+    PROCESSORS.write(tag, value, processors)
 
 
-def read(tag, proc, n_samples=1):
-    value = PROCESSORS.read(tag=tag, proc=proc, n_samples=n_samples)
+def read(tag, processor, n_samples=1):
+    """
+    Read data from the tag of one processor.
+
+    Args:
+        tag (str): Name of the tag in the .rcx file where data is read from.
+        processor (str) : Name of the processor to read from.
+        n_samples (int): Number of samples to read. Any data exceeding this will be ignored.
+
+    Returns:
+        (int, float, list): data read from the tag
+    """
+    value = PROCESSORS.read(tag, processor, n_samples)
     return value
 
 
 def play(kind='zBusA', proc=None):
+    """
+    Use software or the zBus-interface (must be initialized) to send trigger(s) to the processor(s). The zBus
+    triggers are sent to all device and ensure simultaneous triggering. For the software triggers, once has to
+    specify the processor(s).
+
+    Args:
+        kind (str, int): Trigger to use. Possible strings are 'zBusA' or 'zBusB' which uses one of the two zBus
+            options to trigger all devices simultaneously (the zBus system must be initialized). Integers can be in the
+            range 1 - 10 and refer to software triggers for a single processor.
+        proc (None, str): Processor to trigger. Only needed if a software trigger is used
+        """
     PROCESSORS.trigger(kind=kind, proc=proc)
 
 
 def halt():
+    """
+    Halt all devices in the setup, data stored in the working memory of the processors or cameras will be lost.
+    """
     PROCESSORS.halt()
     CAMERAS.halt()
 
 
 def wait_to_finish_playing(proc="all", tag="playback"):
     """
-    Busy wait until the processors finished playing.
+    Busy wait until the device finished playing.
 
     For this function to work, the rcx-circuit must have a tag that is 1
     while output is generated and 0 otherwise. The default name for this
-    kind of tag is "playback". "playback" is read repeatedly for each processors
+    kind of tag is "playback". "playback" is read repeatedly for each device
     followed by a short sleep if the value is 1.
 
     Args:
@@ -130,7 +209,7 @@ def wait_to_finish_playing(proc="all", tag="playback"):
         tag (str): name of the tag that signals if something is played
     """
     if proc == "all":
-        proc = list(PROCESSORS.procs.keys())
+        proc = list(PROCESSORS.processors.keys())
     elif isinstance(proc, str):
         proc = [proc]
     logging.info(f'Waiting for {tag} on {proc}.')
@@ -139,19 +218,18 @@ def wait_to_finish_playing(proc="all", tag="playback"):
     logging.info('Done waiting.')
 
 
-def wait_for_button() -> None:
-    while not PROCESSORS.read(tag="response", proc="RP2"):
+def wait_for_button(proc="RP2", tag="response"):
+    """
+    Busy wait until the response button was pressed. Repeatedly read a tag from a processor and do a busy wait while
+        0 is returned.
+
+    Args:
+        proc (str): Processor from which the tag is read.
+        tag (str): Tag which is read.
+
+    """
+    while not PROCESSORS.read(tag=tag, proc=proc):
         time.sleep(0.1)  # wait until button is pressed
-
-
-def play_and_wait() -> None:
-    PROCESSORS.trigger()
-    wait_to_finish_playing()
-
-
-def play_and_wait_for_button() -> None:
-    play_and_wait()
-    wait_for_button()
 
 
 def pick_speakers(picks):
@@ -163,6 +241,7 @@ def pick_speakers(picks):
         picks (list of lists, list, int): index number of the speaker
 
     Returns:
+        (list):
     """
     if isinstance(picks, (list, np.ndarray)):
         if all(isinstance(p, Speaker) for p in picks):
@@ -171,7 +250,7 @@ def pick_speakers(picks):
             speakers = [s for s in SPEAKERS if s.index in picks]
         else:
             speakers = [s for s in SPEAKERS if (s.azimuth, s.elevation) in picks]
-    elif isinstance(picks, (int, np.int)):
+    elif isinstance(picks, (int, np.int64, np.int32)):
         speakers = [s for s in SPEAKERS if s.index == picks]
     elif isinstance(picks, Speaker):
         speakers = [picks]
@@ -224,11 +303,11 @@ def set_signal_and_speaker(signal, speaker, equalize=True):
         to_play = apply_equalization(signal, speaker)
     else:
         to_play = signal
-    PROCESSORS.write(tag='chan', value=speaker.analog_channel, procs=speaker.analog_proc)
-    PROCESSORS.write(tag='data', value=to_play.data, procs=speaker.analog_proc)
+    PROCESSORS.write(tag='chan', value=speaker.analog_channel, processors=speaker.analog_proc)
+    PROCESSORS.write(tag='data', value=to_play.data, processors=speaker.analog_proc)
     other_procs = set([s.analog_proc for s in SPEAKERS])
-    other_procs.remove(speaker.analog_proc)  # set the analog output of other procs to non existent number 99
-    PROCESSORS.write(tag='chan', value=99, procs=other_procs)
+    other_procs.remove(speaker.analog_proc)  # set the analog output of other processors to non existent number 99
+    PROCESSORS.write(tag='chan', value=99, processors=other_procs)
 
 
 def apply_equalization(signal, speaker, level=True, frequency=True):
@@ -245,12 +324,14 @@ def apply_equalization(signal, speaker, level=True, frequency=True):
     """
     signal = slab.Sound(signal)
     speaker = pick_speakers(speaker)[0]
-    if speaker.filter is None:
-        raise ValueError("Speakers are not equalized! Load an existing equalization of calibrate the setup!")
     equalized_signal = deepcopy(signal)
     if level:
+        if speaker.level is None:
+            raise ValueError("speaker not level-equalized! Load an existing equalization of calibrate the setup!")
         equalized_signal.level *= speaker.level
     if frequency:
+        if speaker.filter is None:
+            raise ValueError("speaker not frequency-equalized! Load an existing equalization of calibrate the setup!")
         equalized_signal = speaker.filter.apply(equalized_signal)
     return equalized_signal
 
@@ -258,7 +339,7 @@ def apply_equalization(signal, speaker, level=True, frequency=True):
 def get_recording_delay(distance=1.6, sample_rate=48828, play_from=None, rec_from=None):
     """
         Calculate the delay it takes for played sound to be recorded. Depends
-        on the distance of the microphone from the speaker and on the processors
+        on the distance of the microphone from the speaker and on the device
         digital-to-analog and analog-to-digital conversion delays.
 
         Args:
@@ -329,7 +410,7 @@ def play_start_sound(speaker=23):
     """
     start = slab.Sound.read(DIR / "data" / "sounds" / "start.wav")
     set_signal_and_speaker(signal=start, speaker=speaker)
-    play_and_wait()
+    play()
 
 
 def play_warning_sound(duration=.5, speaker=23):
@@ -338,10 +419,10 @@ def play_warning_sound(duration=.5, speaker=23):
     """
     warning = slab.Sound.clicktrain(duration=duration)
     set_signal_and_speaker(signal=warning, speaker=speaker)
-    play_and_wait()
+    play()
 
 
-def calibrate_camera(speakers, n_reps=1, n_images=5):
+def calibrate_camera(speakers, n_reps=1, n_images=5, show=True):
     """
     Calibrate all cameras by lighting up a series of LEDs and estimate the pose when the head is pointed
     towards the currently lit LED. This results in a list of world and camera coordinates which is used to
@@ -364,11 +445,11 @@ def calibrate_camera(speakers, n_reps=1, n_images=5):
     world_coordinates = [(seq.conditions[t - 1].azimuth, seq.conditions[t - 1].elevation) for t in seq.trials]
     camera_coordinates = []
     for speaker in seq:
-        write(tag="bitmask", value=int(speaker.digital_channel), procs=speaker.digital_proc)
+        write(tag="bitmask", value=int(speaker.digital_channel), processors=speaker.digital_proc)
         wait_for_button()
         camera_coordinates.append(CAMERAS.get_head_pose(average_axis=1, convert=False, n_images=n_images))
-        write(tag="bitmask", value=0, procs=speaker.digital_proc)
-    CAMERAS.calibrate(world_coordinates, camera_coordinates, plot=True)
+        write(tag="bitmask", value=0, processors=speaker.digital_proc)
+    CAMERAS.calibrate(world_coordinates, camera_coordinates, plot=show)
 
 
 def calibrate_camera_no_visual(speakers, n_reps=1, n_images=5):
@@ -423,14 +504,16 @@ def localization_test_freefield(speakers, duration=0.5, n_reps=1, n_images=5, vi
             play_warning_sound()
             wait_for_button()
         sound = slab.Sound.pinknoise(duration=duration)
-        write(tag="playbuflen", value=sound.n_samples, procs=["RX81", "RX82"])
+        write(tag="playbuflen", value=sound.n_samples, processors=["RX81", "RX82"])
         if visual is True:  # turn LED on
-            write(tag="bitmask", value=speaker.digital_channel, procs=speaker.digital_proc)
+            write(tag="bitmask", value=speaker.digital_channel, processors=speaker.digital_proc)
         set_signal_and_speaker(signal=sound.data.flatten(), speaker=speaker)
-        play_and_wait_for_button()
+        play()
+        wait_to_finish_playing()
+        wait_for_button()
         pose = get_head_pose(n_images=n_images)
         if visual is True:  # turn LED off
-            write(tag="bitmask", value=0, procs=speaker.digital_proc)
+            write(tag="bitmask", value=0, processors=speaker.digital_proc)
         seq.add_response(pose)
     play_start_sound()
     # change conditions property so it contains the only azimuth and elevation of the source
@@ -478,15 +561,17 @@ def localization_test_headphones(speakers, signals, n_reps=1, n_images=5, visual
         while check_pose(fix=[0, 0]) is None:  # check if head is in position
             play_warning_sound()
             wait_for_button()
-        write(tag="playbuflen", value=signal.n_samples, procs="RP2")
-        write(tag="data_l", value=signal.left.data.flatten(), procs="RP2")
-        write(tag="data_r", value=signal.right.data.flatten(), procs="RP2")
+        write(tag="playbuflen", value=signal.n_samples, processors="RP2")
+        write(tag="data_l", value=signal.left.data.flatten(), processors="RP2")
+        write(tag="data_r", value=signal.right.data.flatten(), processors="RP2")
         if visual is True:  # turn LED on
-            write(tag="bitmask", value=speaker.digital_channel, procs=speaker.digital_proc)
-        play_and_wait_for_button()
+            write(tag="bitmask", value=speaker.digital_channel, processors=speaker.digital_proc)
+        play()
+        wait_to_finish_playing()
+        wait_for_button()
         pose = get_head_pose(n_images=n_images)
         if visual is True:  # turn LED off
-            write(tag="bitmask", value=0, procs=speaker.digital_proc)
+            write(tag="bitmask", value=0, processors=speaker.digital_proc)
         seq.add_response(pose)
     play_start_sound()
     # change conditions property so it contains the only azimuth and elevation of the source
@@ -634,7 +719,7 @@ def play_and_record(speaker, sound, compensate_delay=True, compensate_attenuatio
     Play the signal from a speaker and return the recording. Delay compensation
     means making the buffer of the recording processor n samples longer and then
     throwing the first n samples away when returning the recording so sig and
-    rec still have the same legth. For this to work, the circuits rec_buf.rcx
+    rec still have the same length. For this to work, the circuits rec_buf.rcx
     and play_buf.rcx have to be initialized on RP2 and RX8s and the mic must
     be plugged in.
     Parameters:
@@ -646,22 +731,23 @@ def play_and_record(speaker, sound, compensate_delay=True, compensate_attenuatio
     Returns:
         rec: 1-D array, recorded signal
     """
-    write(tag="playbuflen", value=sound.n_samples, procs=["RX81", "RX82"])
+    write(tag="playbuflen", value=sound.n_samples, processors=["RX81", "RX82"])
     if compensate_delay:
         n_delay = get_recording_delay(play_from="RX8", rec_from="RP2")
         n_delay += 50  # make the delay a bit larger to avoid missing the sound's onset
     else:
         n_delay = 0
-    write(tag="playbuflen", value=sound.n_samples, procs=["RX81", "RX82"])
-    write(tag="playbuflen", value=sound.n_samples + n_delay, procs="RP2")
+    write(tag="playbuflen", value=sound.n_samples, processors=["RX81", "RX82"])
+    write(tag="playbuflen", value=sound.n_samples + n_delay, processors="RP2")
     set_signal_and_speaker(sound, speaker, equalize)
-    play_and_wait()
+    play()
+    wait_to_finish_playing()
     if PROCESSORS.mode == "play_rec":  # read the data from buffer and skip the first n_delay samples
-        rec = read(tag='data', proc='RP2', n_samples=sound.n_samples + n_delay)[n_delay:]
+        rec = read(tag='data', processor='RP2', n_samples=sound.n_samples + n_delay)[n_delay:]
         rec = slab.Sound(rec)
     elif PROCESSORS.mode == "play_birec":  # read data for left and right ear from buffer
-        rec_l = read(tag='datal', proc='RP2', n_samples=sound.n_samples + n_delay)[n_delay:]
-        rec_r = read(tag='datar', proc='RP2', n_samples=sound.n_samples + n_delay)[n_delay:]
+        rec_l = read(tag='datal', processor='RP2', n_samples=sound.n_samples + n_delay)[n_delay:]
+        rec_r = read(tag='datar', processor='RP2', n_samples=sound.n_samples + n_delay)[n_delay:]
         rec = slab.Binaural([rec_l, rec_r])
     else:
         raise ValueError("Setup must be initialized in mode 'play_rec' or 'play_birec'!")
