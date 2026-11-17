@@ -44,10 +44,10 @@ sensor = [
 headpose = ["freefield[camera, sensor]"]
 
 
-[project.urls]
-Documentation = ""
-Repository = ""
-Issues = ""
+#[project.urls]
+#Documentation = ""
+#Repository = ""
+#Issues = ""
 
 [tool.setuptools.packages.find]
 include = ["freefield", "freefield.*"]
