@@ -11,9 +11,10 @@ setup, some elements (e.g. handling TDT device, head pose estimation) might have
 
 ## Installation
 
-Use a dedicated Python environment. The Linux CI runs the test suite on Python
-3.8 and 3.12. The example below uses Python 3.12. For a FLIR setup, choose a
-Python version supported by the Spinnaker SDK and Python wheel you plan to use.
+Freefield requires Python 3.8 or later. Linux CI runs the test suite on Python
+3.8 and 3.12. Use a dedicated Python environment. The example below uses Python
+3.12. For a FLIR setup, choose a Python version supported by the Spinnaker SDK
+and Python wheel you plan to use.
 
 ```bash
 conda create --name freefield python=3.12 pip
@@ -81,5 +82,6 @@ If you installed the camera extra, check its imports as well.
 python -c "import cv2; from headpose import PoseEstimator; print(cv2.__version__)"
 ```
 
-Continue with the [first steps](docs/getting_started.rst#first-steps) to
-initialize a setup and play a sound.
+See the [installation guide](docs/getting_started.rst#installation) for more
+details and the [first steps](docs/getting_started.rst#first-steps) to initialize
+a setup and play a sound.

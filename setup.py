@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 import re
 
-with open('README.md') as f:
+with open('README.md', encoding='utf-8') as f:
     readme = f.read()
 
 # extract version
@@ -29,10 +29,10 @@ setup(name='freefield',
       long_description=readme,
       long_description_content_type='text/markdown',
       url='https://github.com/pfriedrich-hub/freefield.git',
-      authors='Ole Bialas, Paul Friedrich, Lukas Lange',
+      author='Ole Bialas, Paul Friedrich, Lukas Lange',
       author_email='bialas@cbs.mpg.de',
       license='MIT',
-      python_requires='>=3.6',
+      python_requires='>=3.8',
       install_requires=['numpy',
                         'setuptools',
                         'pandas',
@@ -44,7 +44,7 @@ setup(name='freefield',
           "sensor": SENSOR_REQUIRES,
           "headpose": CAMERA_REQUIRES + SENSOR_REQUIRES,
       },
-      packages=find_packages(),
+      packages=find_packages(include=['freefield', 'freefield.*']),
       package_data={'freefield': ['data/tables/*', 'data/sounds/*', 'data/sounds/USOs/*',
                                   'data/sounds/tts-numbers_n13_resamp_48828/*', 'data/sounds/numbers_0-99_tts/*',
                                   'data/rcx/*', 'data/models/*',
