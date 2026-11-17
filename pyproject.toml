@@ -34,7 +34,7 @@ classifiers = [
 
 [project.optional-dependencies]
 camera = [
-    "opencv-python",
+    "opencv-python<5",
     "headpose",
     "pillow",
 ]
