@@ -1,4 +1,4 @@
-![Package](https://github.com/DrMarc/freefield/actions/workflows/python-package/badge.svg)
+![Package](https://github.com/DrMarc/freefield/actions/workflows/python-package.yml/badge.svg)
 [![Documentation Status](https://app.readthedocs.org/projects/freefield/badge/?version=latest)](https://free-field.readthedocs.io/en/latest/?badge=latest)
 [![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-brightgreen.svg)](https://github.com/OleBialas/freefield/graphs/commit-activity)
 ![PyPI pyversions](https://img.shields.io/badge/python-%3E%3D3.8-blue)
