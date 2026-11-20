@@ -1,7 +1,7 @@
 freefield_toolbox/__pycache__/
 freefield_toolbox/.pytest_cache/
 freefield/__pycache__/
-freefield/tests/__pycache__/
+freefield/old_tests/__pycache__/
 /.idea
 /log/
 freefield/level_calibration_dome.npy
@@ -9,7 +9,7 @@ freefield/frequency_calibration_dome.npy
 *.npy
 freefield/shape_predictor_68_face_landmarks.dat
 /data/log/*
-*.pkl
+# *.pkl
 
 
 # Created by https://www.toptal.com/developers/gitignore/api/linux,pycharm,python
@@ -275,3 +275,6 @@ dmypy.json
 
 # End of https://www.toptal.com/developers/gitignore/api/linux,pycharm,python
 /docs/_build/
+
+### macOS ###
+.DS_Store

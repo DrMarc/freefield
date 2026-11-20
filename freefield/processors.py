@@ -23,6 +23,7 @@ class Processors(object):
         self.processors = dict()
         self.mode = None
         self._zbus = None
+        self.rcx_dict = dict()
 
     def initialize(self, device, zbus=False, connection='GB'):
         logging.info('Initializing TDT device, this may take a moment ...')
@@ -42,43 +43,50 @@ class Processors(object):
                 else:
                     raise FileNotFoundError(f"{file} does not exist!")
         for name, model, circuit in device:
-            # advance index if a model appears more then once
+            # advance index if a model appears more than once
             models.append(model)
             index = Counter(models)[model]
-            print(f"initializing {name} of type {model} with index {index}")
+            logging.info(f"initializing {name} of type {model} with index {index}")
             self.processors[name] = self._initialize_proc(model, circuit,
                                                           connection, index)
+            self.rcx_dict[name] = str(circuit)
         if zbus:
             self._zbus = self._initialize_zbus(connection)
         if self.mode is None:
             self.mode = "custom"
 
-    def initialize_default(self, mode):
-        if mode.lower() == 'play_rec':
-            proc_list = [['RP2', 'RP2',  DIR/'data'/'rcx'/'rec_buf.rcx'],
-                         ['RX81', 'RX8', DIR/'data'/'rcx'/'play_buf.rcx'],
-                         ['RX82', 'RX8', DIR/'data'/'rcx'/'play_buf.rcx']]
-        elif mode.lower() == "play_birec":
-            proc_list = [['RP2', 'RP2',  DIR/'data'/'rcx'/'bi_rec_buf.rcx'],
-                         ['RX81', 'RX8', DIR/'data'/'rcx'/'play_buf.rcx'],
-                         ['RX82', 'RX8', DIR/'data'/'rcx'/'play_buf.rcx']]
-        elif mode.lower() == "loctest_freefield":
-            proc_list = [['RP2', 'RP2',  DIR/'data'/'rcx'/'button.rcx'],
-                         ['RX81', 'RX8', DIR/'data'/'rcx'/'play_buf.rcx'],
-                         ['RX82', 'RX8', DIR/'data'/'rcx'/'play_buf.rcx']]
-        elif mode.lower() == "loctest_headphones":
-            proc_list = [['RP2', 'RP2',  DIR/'data'/'rcx'/'bi_play_buf.rcx'],
-                         ['RX81', 'RX8', DIR/'data'/'rcx'/'bits.rcx'],
-                         ['RX82', 'RX8', DIR/'data'/'rcx'/'bits.rcx']]
-        elif mode.lower() == "cam_calibration":
-            proc_list = [['RP2', 'RP2',  DIR/'data'/'rcx'/'button.rcx'],
-                           ['RX81', 'RX8', DIR/'data'/'rcx'/'bits.rcx'],
-                           ['RX82', 'RX8', DIR/'data'/'rcx'/'bits.rcx']]
-        else:
-            raise ValueError(f'mode {mode} is not a valid input!')
+    def initialize_default(self,setup, mode):
+
+        if setup is None:
+            raise RuntimeError(
+                "No setup initialized. Call freefield.initialize() first."
+            )
+
+        mode = mode.lower()
+
+        if mode not in setup.default_modes:
+            raise ValueError(
+                f"Mode {mode!r} is not available for setup {setup.name!r}.")
+
+        mode_config = setup.default_modes[mode]
+
+        proc_list = [
+            [
+                processor.name,
+                processor.model,
+                DIR / "data" / "rcx" / processor.circuit,
+            ]
+            for processor in mode_config.processors
+        ]
+
         self.mode = mode
-        logging.info(f'set mode to {mode}')
-        self.initialize(proc_list, True, "GB")
+        logging.debug(f"set mode to {mode}")
+
+        self.initialize(
+            proc_list,
+            mode_config.zbus,
+            mode_config.connection,
+        )
 
     def write(self, tag, value, processors):
         if isinstance(value, (np.int32, np.int64)):
@@ -102,10 +110,10 @@ class Processors(object):
                 flag = self.processors[proc]._oleobj_.InvokeTypes(
                     15, 0x0, 1, (3, 0), ((8, 0), (3, 0), (0x2005, 0)),
                     tag, 0, value)
-                logging.info(f'Set {tag} on {proc}.')
+                logging.debug(f'Set {tag} on {proc}.')
             else:
                 flag = self.processors[proc].SetTagVal(tag, value)
-                logging.info(f'Set {tag} to {value} on {proc}.')
+                logging.debug(f'Set {tag} to {value} on {proc}.')
             if flag == 0:
                 logging.warning(f'Unable to set tag {tag} on {proc}')
         return flag
@@ -115,7 +123,7 @@ class Processors(object):
             value = np.asarray(self.processors[proc].ReadTagV(tag, 0, n_samples))
         else:
             value = self.processors[proc].GetTagVal(tag)
-        logging.info(f'Got {tag} from {proc}.')
+        logging.debug(f'Got {tag} = {value} from {proc}.')
         return value
 
     def halt(self):
@@ -127,13 +135,17 @@ class Processors(object):
                 proc.Halt()
 
     def trigger(self, kind='zBusA', proc=None):
+        if isinstance(kind, str) and not self._zbus:
+            logging.warning('zBus trigger not available. Default to soft trigger 1')
+            kind = 1
+            proc = list(self.processors.keys())
         if isinstance(kind, int):
             if not proc:
                 raise ValueError('Proc needs to be specified for SoftTrig!')
-            if not 1<= kind >= 10:
+            if not 1 <= kind <= 10:
                 raise ValueError("software triggers must be between 1 and 10!")
-            self.processors[proc].SoftTrg(kind)
-            logging.info(f'SoftTrig {kind} sent to {proc}.')
+            [self.processors[processor].SoftTrg(kind) for processor in proc]
+            logging.debug(f'SoftTrig {kind} sent to {proc}.')
         elif 'zbus' in kind.lower():
             if self._zbus is None:
                 raise ValueError('ZBus needs to be initialized first!')
@@ -161,10 +173,10 @@ class Processors(object):
             connected = rp.ConnectRP2(connection, index)
         elif model.upper() == 'RX8':
             connected = rp.ConnectRX8(connection, index)
-        elif model.upper() == 'RM1':
-            connected = rp.ConnectRX8(connection, index)
         elif model.upper() == 'RX6':
-            connected = rp.ConnectRX8(connection, index)
+            connected = rp.ConnectRX6(connection, index)
+        elif model.upper() == 'RM1':
+            connected = rp.ConnectRM1(connection, index)
         if not connected:
             logging.warning(f'Unable to connect to {model} processor!')
         else:  # connecting was successful, load circuit
@@ -173,11 +185,11 @@ class Processors(object):
             if not rp.LoadCOF(circuit):
                 logging.warning(f'could not load {circuit}.')
             else:
-                logging.info(f'{circuit} loaded!')
+                logging.debug(f'{circuit} loaded!')
             if not rp.Run():
                 logging.warning(f'Failed to run {model} processor')
             else:
-                logging.info(f'{model} processor is running...')
+                logging.info(f'Processor {model} index {index} is running')
             return rp
 
     @staticmethod

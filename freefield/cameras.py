@@ -4,8 +4,14 @@ from abc import abstractmethod
 import numpy
 from matplotlib import pyplot as plt
 from scipy import stats
-import PIL
-import cv2
+try:
+    import PIL
+except ModuleNotFoundError:
+    PIL = False
+try:
+    import cv2
+except ModuleNotFoundError:
+    cv2 = False
 try:
     import PySpin
 except ModuleNotFoundError:
@@ -14,6 +20,9 @@ try:
     import headpose
 except ModuleNotFoundError:
     headpose = False
+if not cv2 or PySpin and not headpose:
+    logging.warning('Could not import camera modules - working with cameras is disabled')
+
 
 def initialize(kind="flir"):
     """
@@ -71,10 +80,15 @@ class Cameras:
         return pose
 
     def change_image_res(self, image, resolution):
+        if resolution <= 0:
+            raise ValueError("Resolution can't be smaller or equal to zero!")
         image = PIL.Image.fromarray(image)
         width = int(self.imsize[1] * resolution)
         height = int(self.imsize[0] * resolution)
-        image = image.resize((width, height), PIL.Image.ANTIALIAS)
+        image = image.resize(
+            (width, height),
+            PIL.Image.Resampling.LANCZOS,
+        )
         return numpy.asarray(image)
 
     def convert_coordinates(self, pose):
@@ -224,7 +238,7 @@ class WebCams(Cameras):
                 for i in range(cv2.CAP_PROP_FRAME_COUNT):
                     cam.grab()
                 ret, image = cam.retrieve()
-                if image.shape[-1] == 3:
+                if image.ndim == 3 and image.shape[-1] == 3:
                     image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
                 if ret is False:
                     logging.warning("could not acquire image...")
