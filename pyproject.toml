@@ -23,7 +23,7 @@ dependencies = ['numpy',
                 'scipy',
                 'slab']
 classifiers = [
-    "Developmental Status :: 4 - Beta",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Instrument Drivers",
     "Programming Language :: Python :: 3.8",
