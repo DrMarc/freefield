@@ -1,7 +1,7 @@
-![Package](https://github.com/DrMarc/freefield/actions/workflows/python-package.yml/badge.svg)
-[![Documentation Status](https://app.readthedocs.org/projects/freefield/badge/?version=latest)](https://free-field.readthedocs.io/en/latest/?badge=latest)
+![Package](https://github.com/OleBialas/freefield/workflows/Python%20package/badge.svg)
+[![Documentation Status](https://readthedocs.org/projects/soundlab/badge/?version=latest)](https://free-field.readthedocs.io/en/latest/?badge=latest)
 [![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-brightgreen.svg)](https://github.com/OleBialas/freefield/graphs/commit-activity)
-![PyPI pyversions](https://img.shields.io/badge/python-%3E%3D3.8-blue)
+![PyPI pyversions](https://img.shields.io/badge/python-%3E%3D3.6-blue)
 ![PyPI license](https://img.shields.io/badge/license-MIT-brightgreen)
 [![DOI](https://zenodo.org/badge/195776894.svg)](https://zenodo.org/badge/latestdoi/195776894)
 
@@ -44,3 +44,4 @@ To use cameras from the manufacturer FLIR systems, you have to install their Pyt
 a 64-Bit Windows and Python 3.8 download spinnaker_python-2.2.0.48-cp38-cp38-win_amd64.zip.
 Unpack the .zip file and select the folder. There should be a file inside that ends with .whl - install it using pip:\
 `pip install spinnaker_python-2.2.0.48-cp38-cp38-win_amd64.whl`
+
