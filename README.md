@@ -1,9 +1,8 @@
-![Package](https://github.com/OleBialas/freefield/workflows/Python%20package/badge.svg)
-[![Documentation Status](https://readthedocs.org/projects/soundlab/badge/?version=latest)](https://free-field.readthedocs.io/en/latest/?badge=latest)
-[![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-brightgreen.svg)](https://github.com/OleBialas/freefield/graphs/commit-activity)
+![Package](https://github.com/DrMarc/freefield/actions/workflows/python-package.yml/badge.svg)
+[![Documentation Status](https://readthedocs.org/projects/freefield_toolbox/badge/?version=latest)](https://freefield-toolbox.readthedocs.io/)
+[![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-brightgreen.svg)](https://github.com/DrMarc/freefield/graphs/commit-activity)
 ![PyPI license](https://img.shields.io/badge/license-MIT-brightgreen)
-[![DOI](https://zenodo.org/badge/195776894.svg)](https://zenodo.org/badge/latestdoi/195776894)
-
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24397850.svg)](https://doi.org/10.5281/zenodo.24397850)
 
 The code in this package was written to conduct experiments using a psychoacoustics setup which consists of 48 loudspeakers and 4 cameras in a hemi-anaechoic room. The loudspeakers are driven by two digital signal processors
 from Tucker-Davis Technologies (TDT). While large parts of this package are tailored to one specific experimental
