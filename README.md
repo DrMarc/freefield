@@ -1,5 +1,6 @@
-![Package](https://github.com/DrMarc/freefield/actions/workflows/python-package.yml/badge.svg)
-[![Documentation Status](https://readthedocs.org/projects/freefield_toolbox/badge/?version=latest)](https://freefield-toolbox.readthedocs.io/)
+[![Tests](https://github.com/DrMarc/freefield/actions/workflows/tests.yml/badge.svg)](https://github.com/DrMarc/freefield/actions/workflows/tests.yml)
+[![Python Package](https://github.com/DrMarc/freefield/actions/workflows/python-publish.yml/badge.svg)](https://github.com/DrMarc/freefield/actions/workflows/python-publish.yml)
+[![Documentation Status](https://app.readthedocs.org/projects/freefield_toolbox/badge/?version=latest)](https://freefield-toolbox.readthedocs.io/)
 [![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-brightgreen.svg)](https://github.com/DrMarc/freefield/graphs/commit-activity)
 ![PyPI license](https://img.shields.io/badge/license-MIT-brightgreen)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24397850.svg)](https://doi.org/10.5281/zenodo.24397850)
